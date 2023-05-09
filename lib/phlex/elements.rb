@@ -21,6 +21,22 @@ end
 # 	end
 module Phlex::Elements
 	# @api private
+	class Element < Struct.new(:tag, :attributes)
+	  def ===(target)
+	  	case target
+	  	when Symbol
+	  		tag === target
+	  	else
+	  		self === target
+	  	end
+	  end
+
+	  def deconstruct
+	  	[ tag, attributes ]
+	  end
+	end
+
+	# @api private
 	def registered_elements
 		@registered_elements ||= Concurrent::Map.new
 	end
@@ -42,17 +58,19 @@ module Phlex::Elements
 				target = @_context.target
 
 				if object
-  				if object.respond_to?(:html_attributes) and html_attributes = object.send(:html_attributes, :#{tag})
-  					attributes.merge! html_attributes
+  				if object.respond_to?(:html_attributes) and html_attributes = object.html_attributes(:#{tag})
+  					attributes = html_attributes.merge(attributes)
   				end
 
-  		    if block.nil? and object.respond_to?(:html_content) and content = object.send(:html_content, :#{tag})
-  		      block = case content
-  		      when Phlex::HTML
-  		        Proc.new { render content }
-  		      else
-  		        Proc.new { content }
-  		      end
+  		    if block.nil? and html_content_method = object.method(:html_content)
+						if html_content = html_content_method.call(Element.new(:#{tag}, attributes))
+	  		      block = case html_content
+	  		      when Phlex::HTML
+	  		        Proc.new { render html_content }
+	  		      else
+	  		        Proc.new { html_content }
+	  		      end
+	  		    end
   		    end
  				end
 
