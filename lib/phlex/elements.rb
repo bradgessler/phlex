@@ -21,19 +21,50 @@ end
 # 	end
 module Phlex::Elements
 	# @api private
-	class Element < Struct.new(:tag, :attributes)
-	  def ===(target)
-	  	case target
-	  	when Symbol
-	  		tag === target
-	  	else
-	  		self === target
-	  	end
-	  end
+	class VoidElement
+		attr_reader :name
+		attr_accessor :attributes
 
-	  def deconstruct
-	  	[ tag, attributes ]
-	  end
+		def initialize(name, **attributes)
+			@name = name
+			@attributes = attributes
+		end
+
+		def tag(**attributes)
+			@attributes = attributes
+		end
+
+		def deconstruct
+			[@name, @attributes]
+		end
+
+		def deconstruct_keys(*)
+			Hash[*deconstruct]
+		end
+
+		def ===(target)
+			case target
+			when Symbol
+				@name === target
+			else
+				self === target
+			end
+		end
+	end
+
+	# @api private
+	class Element < VoidElement
+		attr_accessor :content
+
+		def initialize(name, **attributes, &content)
+			super(name, **attributes)
+			@content = content
+		end
+
+		def tag(**attributes, &content)
+			super(**attributes)
+			@content = content
+		end
 	end
 
 	# @api private
@@ -57,22 +88,20 @@ module Phlex::Elements
 			def #{method_name}(object = nil, **attributes, &block)
 				target = @_context.target
 
-				if object
-  				if object.respond_to?(:html_attributes) and html_attributes = object.html_attributes(:#{tag})
-  					attributes = html_attributes.merge(attributes)
-  				end
+				if object.respond_to? :phlex_html
+					element = Element.new(:#{tag}, **attributes, &block)
+					object.phlex_html element
+					attributes = element.attributes
 
-  		    if block.nil? and html_content_method = object.method(:html_content)
-						if html_content = html_content_method.call(Element.new(:#{tag}, attributes))
-	  		      block = case html_content
-	  		      when Phlex::HTML
-	  		        Proc.new { render html_content }
-	  		      else
-	  		        Proc.new { html_content }
-	  		      end
-	  		    end
-  		    end
- 				end
+					if content = element.content&.call
+						block = case content
+						when Phlex::HTML
+							Proc.new { render content }
+						else
+							Proc.new { content }
+						end
+					end
+				end
 
 				if attributes.length > 0 # with attributes
 					if block # with content block
@@ -115,8 +144,10 @@ module Phlex::Elements
 			def #{method_name}(object = nil, **attributes)
 				target = @_context.target
 
-				if object.respond_to?(:html_attributes) and html_attributes = object.send(:html_attributes, :#{tag})
-					attributes.merge! html_attributes
+				if object.respond_to? :phlex_html
+					element = VoidElement.new(:#{tag}, **attributes)
+					object.phlex_html element
+					attributes = element.attributes
 				end
 
 				if attributes.length > 0 # with attributes
